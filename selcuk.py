@@ -2,44 +2,21 @@ import requests
 import re
 import os
 
-def get_domain_from_amp(amp_url):
-    print(f"🧭 AMP sayfası taranıyor: {amp_url}")
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    try:
-        response = requests.get(amp_url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            # AMP sayfasındaki buton veya linkleri arar (selcuksportshd içeren adresler)
-            match = re.search(r'href=[\'"](https?://[^\'"]*selcuksportshd[^\'"]*)[\'"]', response.text)
-            if match:
-                target_url = match.group(1)
-                print(f"✅ AMP sayfasından hedef adres bulundu: {target_url}")
-                return target_url
-            
-            # Eğer JS yönlendirmesi varsa onu yakala
-            match_js = re.search(r'(?:window\.location|location\.href)\s*=\s*[\'"]([^\'"]+)[\'"]', response.text)
-            if match_js:
-                target_url = match_js.group(1)
-                print(f"✅ AMP JS yönlendirmesi bulundu: {target_url}")
-                return target_url
-        else:
-            print(f"⚠️ AMP sayfası HTTP kodu döndürdü: {response.status_code}")
-    except Exception as e:
-        print(f"⚠️ AMP sayfasına erişilirken hata oluştu: {e}")
-    
-    return None
-
-def verify_and_get_page(domain_url):
-    print(f"🔍 Domain doğrulanıyor: {domain_url}")
+def check_target_domain():
+    url = "https://www.selcuksportshdfe44b96fcb.xyz/"
+    print(f"🔍 Domain kontrol ediliyor: {url}")
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        response = requests.get(domain_url, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200 and "uxsyplayer" in response.text:
-            print(f"✅ Aktif domain doğrulandı: {domain_url}")
-            return response.text, domain_url
+            print(f"✅ Aktif domain doğrulandı: {url}")
+            return response.text, url
+        else:
+            print(f"⚠️ Sayfa yüklendi ancak içerik beklenen kriterde değil. Durum kodu: {response.status_code}")
     except Exception as e:
-        print(f"⚠️ Doğrulama hatası: {e}")
-    
-    print("❌ Domain doğrulanamadı.")
+        print(f"⚠️ Bağlantı hatası: {e}")
+
+    print("❌ Domain aktif değil veya erişilemiyor.")
     return None, None
 
 def find_dynamic_player_domain(page_html):
@@ -126,12 +103,7 @@ channel_ids = [
 ]
 
 # Ana işlem
-amp_link = "https://amp-c4f96e8009.selcuksportshdamp-b51494b031.click/amp.html?v=1792425585"
-target_domain = get_domain_from_amp(amp_link)
-
-html, referer_url = None, None
-if target_domain:
-    html, referer_url = verify_and_get_page(target_domain)
+html, referer_url = check_target_domain()
 
 if html:
     stream_domain = find_dynamic_player_domain(html)
