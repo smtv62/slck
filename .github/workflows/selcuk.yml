@@ -8,7 +8,7 @@ on:
     - cron: '*/10 * * * *'  
 jobs:
   BirlesikGuncelleme:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     permissions:
