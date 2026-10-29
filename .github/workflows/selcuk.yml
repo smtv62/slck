@@ -1,48 +1,43 @@
-name: Selcuk kontrol
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+name: SLCK Selcuk Guncelleyici
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '*/10 * * * *'  
+    - cron: '*/10 * * * *'   # her 10 dakikada bir
+  workflow_dispatch:          # elle tetikleme
+
+permissions:
+  contents: write
 
 jobs:
-  BirlesikGuncelleme:
+  update-playlist:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    permissions:
-      contents: write
-    steps:
-      - name: Depoyu Klonla
-        uses: actions/checkout@v4.2.2
-        
-      - name: Python Yükle
-        uses: actions/setup-python@v5.3.0
-        with:
-          python-version: '3.11'
-          
-      - name: Gereksinimleri Kur
-        run: |
-          python -m pip install --upgrade pip
-          pip install -U setuptools wheel Kekik httpx parsel requests
-          
-      - name: selcuk.py Çalıştır
-        run: python selcuk.py
 
-      - name: Değişiklik Kontrolü
-        id: degisiklik_kontrol
-        run: |
-          git diff --quiet . || echo "degisiklik=true" >> $GITHUB_OUTPUT
-          
-      - name: Değişiklikleri Commit Et
-        if: steps.degisiklik_kontrol.outputs.degisiklik == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "🔄 Tüm listeler güncellendi (TRGoals, MonoTV & CanliTV)" -m "📺 Domain kontrolü ve M3U güncellemeleri tamamlandı" -m "🕒 Otomatik işlem - $GITHUB_SHA"
-          git push
+    steps:
+    - name: Repoyu cek
+      uses: actions/checkout@v4
+
+    - name: Python Kur
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Kutuphaneleri Yukle
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Scripti calistir (selcuk.py)
+      run: python selcuk.py
+
+    - name: Degisiklik Kontrolu
+      run: |
+        git diff --quiet . || echo "degisiklik=true" >> $GITHUB_OUTPUT
+        
+    - name: Degisikleri Commit Et
+      if: steps.degisiklik_kontrol.outputs.degisiklik == 'true'
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add selcuk.py 5.m3u
+        git commit -m "🔄 SLCK guncellemesi: $(date)" -m "📺 Otomatik guncelleme - playlist korunuyor" || exit 0
+        git push
