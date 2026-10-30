@@ -2,8 +2,11 @@
 
 Akis:
   1) Ana sayfadaki ``index.php?id=<kanal>`` baglantilarindan kanal ID'leri okunur.
-  2) Her kanal icin ``<stream_domain>/live/<id>/playlist.m3u8`` GET ile dogrulanir.
-     (Stream referer gerektirmez; player da ayni URL'yi referersiz ceker.)
+  2) Her kanal icin ``<stream_domain>/live/<id>/playlist.m3u8`` GET ile dogrulanir;
+     ardindan ilk segmentin gercek medya (MPEG-TS/fMP4) oldugu kontrol edilir
+     (TikTok kaynakli "placeholder" PNG yayinlar boylece elenir).
+     Segmentler Referer header'i ZORUNLU (yoksa HTTP 403); m3u ciktisina
+     ``#EXTVLCOPT:http-referrer`` satiri yazilir (VLC + uygulama destekler).
   3) Domain, player.js'te saklanmadigi icin (WASM/protobuf sifreli /api/config)
      bilinen calisan domain + yedekler sirayla denenir.
   4) Hic calisan yayin yoksa DOSYA YAZILMAZ ve cikis 1 olur (eski liste korunur).
@@ -13,6 +16,7 @@ import re
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urljoin
 
 import requests
 import urllib3
@@ -40,6 +44,11 @@ STREAM_DOMAINS = [
     "https://dga1op10s1u3lea.9e694e1c2ce7ac.click",
     "https://dga1op10s1u3leo.77b6de8e471484.click",
 ]
+
+# Segmentler Referer'siz HTTP 403 doner (Cloudflare). Test edilmis calisan
+# referer: player adresi. M3U'ya #EXTVLCOPT:http-referrer olarak yazilir;
+# smTV One M3uParser + VLC bu satiri header olarak uygular.
+STREAM_REFERER = "https://main.uxsyplayer6859599e6c.click/"
 
 # Ana sayfadaki selcuk* ID'leri icin gorunen adlar.
 PRETTY_NAMES = {
@@ -113,25 +122,53 @@ def parse_channel_ids(html):
     return out
 
 
-def probe(domain, cid):
-    """Stream dogrular; calisiyorsa tam URL dondurur."""
-    url = f"{domain}/live/{cid}/playlist.m3u8"
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=12, stream=True)
-        if r.status_code != 200:
-            return None
-        chunk = next(r.iter_content(256), b"")
-        if chunk.decode("utf-8", "replace").lstrip().startswith("#EXTM3U"):
-            return url
-    except Exception:
+def probe_media(playlist_url):
+    """Playlist acilir; ilk segment gercek medya (MPEG-TS/fMP4) ise URL dondurulur.
+
+    TikTok kaynakli oluler sadece PNG gorsel dongusu dondurur (placeholder);
+    bunlar VLC'de "goruntu yok" yapar, listeye almamak gerekir.
+    """
+    r = requests.get(playlist_url, headers=HEADERS, timeout=12)
+    if r.status_code != 200:
         return None
+    text = r.text.lstrip()
+    if not text.startswith("#EXTM3U"):
+        return None
+
+    # Variant playlist ise alt gecis; sonra ilk segmenti bul.
+    base = playlist_url
+    for _ in range(2):
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            url = urljoin(base, line)
+            if url.endswith(".m3u8") or ".m3u8?" in url:
+                rr = requests.get(url, headers=HEADERS, timeout=12)
+                if rr.status_code != 200:
+                    return None
+                text, base = rr.text.lstrip(), url
+                break
+            # Segment: ilk bayti kontrol et (0x47 = MPEG-TS sync; fMP4 = 'ftyp').
+            rs = requests.get(url, headers=HEADERS, timeout=12, stream=True)
+            if rs.status_code != 200:
+                return None
+            head = next(rs.iter_content(16), b"")
+            if head[:1] == b"\x47" or b"ftyp" in head[:12]:
+                return playlist_url
+            return None
+        else:
+            return None
     return None
 
 
 def resolve(cid):
-    """Ilk calisan domain uzerinden URL bulur."""
+    """Ilk calisan domain uzerinden URL bulur (segment bazli dogrulama ile)."""
     for domain in STREAM_DOMAINS:
-        url = probe(domain, cid)
+        try:
+            url = probe_media(f"{domain}/live/{cid}/playlist.m3u8")
+        except Exception:
+            url = None
         if url:
             return cid, url
     return cid, None
@@ -172,7 +209,9 @@ def main():
     with open(OUTPUT_FILENAME, "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n")
         for name, url in entries:
-            f.write(f'#EXTINF:-1 group-title="{GROUP}", {name}\n{url}\n')
+            f.write(f'#EXTINF:-1 group-title="{GROUP}", {name}\n')
+            f.write(f"#EXTVLCOPT:http-referrer={STREAM_REFERER}\n")
+            f.write(f"{url}\n")
 
     print(f"\n✅ ISLEM TAMAMLANDI!  {len(entries)} yayin  ->  {os.path.abspath(OUTPUT_FILENAME)}")
 
