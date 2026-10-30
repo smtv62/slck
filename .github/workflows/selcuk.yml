@@ -2,7 +2,7 @@ name: SLCK Selcuk Guncelleyici
 
 on:
   schedule:
-    - cron: '*/10 * * * *'   # her 10 dakikada bir
+    - cron: '55 */2 * * *'   # her 2 saatte bir
   workflow_dispatch:          # elle tetikleme
 
 permissions:
